@@ -1,6 +1,9 @@
 package br.com.rotamais
 
 import android.Manifest
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -14,7 +17,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.snapshots.SnapshotStateList
+import androidx.compose.runtime.toMutableStateList
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.compose.NavHost
@@ -31,10 +38,42 @@ import br.com.rotamais.ui.TelaHome
 import br.com.rotamais.ui.TelaRota
 
 class MainActivity : ComponentActivity() {
+
+    /** Fotos que chegaram por "Compartilhar" de outro app, esperando o OCR. */
+    private val compartilhadas: SnapshotStateList<Uri> = mutableListOf<Uri>().toMutableStateList()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { RotaMaisTheme { App() } }
+        receber(intent)
+        setContent { RotaMaisTheme { App(compartilhadas) } }
     }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        receber(intent)
+    }
+
+    private fun receber(intent: Intent?) {
+        if (intent == null) return
+        val uris = when (intent.action) {
+            Intent.ACTION_SEND -> listOfNotNull(extrair(intent, Intent.EXTRA_STREAM))
+            Intent.ACTION_SEND_MULTIPLE -> extrairVarias(intent)
+            else -> emptyList()
+        }
+        if (uris.isNotEmpty()) compartilhadas.addAll(uris)
+    }
+
+    @Suppress("DEPRECATION")
+    private fun extrair(intent: Intent, chave: String): Uri? =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
+            intent.getParcelableExtra(chave, Uri::class.java)
+        else intent.getParcelableExtra(chave)
+
+    @Suppress("DEPRECATION")
+    private fun extrairVarias(intent: Intent): List<Uri> =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
+            intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java).orEmpty()
+        else intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM).orEmpty()
 }
 
 private data class Aba(val rota: String, val titulo: String)
@@ -48,11 +87,12 @@ private val ABAS = listOf(
 )
 
 @Composable
-fun App() {
+fun App(compartilhadas: SnapshotStateList<Uri> = mutableListOf<Uri>().toMutableStateList()) {
+
     val vm: MainViewModel = viewModel()
     val nav = rememberNavController()
     val entradaAtual by nav.currentBackStackEntryAsState()
-    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val ctx = LocalContext.current
 
     val pedirPermissao = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -70,6 +110,16 @@ fun App() {
                     Manifest.permission.ACCESS_COARSE_LOCATION
                 )
             )
+        }
+    }
+
+    // Fotos chegadas por "Compartilhar": manda para o OCR e abre a aba Entregas.
+    LaunchedEffect(compartilhadas.size) {
+        if (compartilhadas.isNotEmpty()) {
+            val copia = compartilhadas.toList()
+            compartilhadas.clear()
+            vm.importarImagens(copia)
+            nav.navigate("entregas") { launchSingleTop = true }
         }
     }
 

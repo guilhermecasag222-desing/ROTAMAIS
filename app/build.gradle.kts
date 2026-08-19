@@ -55,5 +55,8 @@ dependencies {
 
     implementation("com.google.android.gms:play-services-location:21.3.0")
 
+    // OCR das etiquetas. Roda 100% no aparelho, offline, sem chave e sem custo.
+    implementation("com.google.mlkit:text-recognition:16.0.1")
+
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

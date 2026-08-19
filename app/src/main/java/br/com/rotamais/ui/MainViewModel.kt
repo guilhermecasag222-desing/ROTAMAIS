@@ -1,6 +1,7 @@
 package br.com.rotamais.ui
 
 import android.app.Application
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import br.com.rotamais.data.AppDatabase
@@ -13,6 +14,9 @@ import br.com.rotamais.geo.Geo
 import br.com.rotamais.geo.Geocodificador
 import br.com.rotamais.geo.Localizacao
 import br.com.rotamais.geo.Osrm
+import br.com.rotamais.ocr.Confianca
+import br.com.rotamais.ocr.EnderecoLido
+import br.com.rotamais.ocr.LeitorEtiqueta
 import br.com.rotamais.otim.Otimizador
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -28,9 +32,21 @@ data class ParadaUi(
     val minutosAcumulados: Int
 )
 
+/** Uma etiqueta lida por OCR, aguardando conferencia antes de virar entrega. */
+data class ItemRevisao(
+    val id: Int,
+    val texto: String,
+    val confianca: Confianca,
+    val destinatario: String?,
+    val textoBruto: String,
+    val origem: String,
+    val incluir: Boolean = true
+)
+
 data class UiState(
     val carregando: Boolean = false,
     val progresso: String? = null,
+    val revisao: List<ItemRevisao> = emptyList(),
     val mensagem: String? = null,
     val origemLat: Double? = null,
     val origemLon: Double? = null,
@@ -194,6 +210,108 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             )
         }
     }
+
+    // ------------------------------------------------------ Captura por OCR
+
+    /**
+     * Le em lote as fotos das etiquetas. Nada e gravado direto: tudo cai na fila de
+     * revisao, porque OCR erra e endereco errado custa quilometro.
+     */
+    fun importarImagens(uris: List<Uri>) {
+        viewModelScope.launch {
+            if (uris.isEmpty()) return@launch
+            _ui.value = _ui.value.copy(carregando = true, progresso = "Lendo 0/${uris.size}")
+
+            val achados = mutableListOf<ItemRevisao>()
+            var proximoId = _ui.value.revisao.maxOfOrNull { it.id }?.plus(1) ?: 0
+
+            uris.forEachIndexed { i, uri ->
+                _ui.value = _ui.value.copy(progresso = "Lendo foto ${i + 1}/${uris.size}")
+                val lidos = LeitorEtiqueta.ler(getApplication(), uri, "foto ${i + 1}")
+                lidos.forEach { l ->
+                    achados += ItemRevisao(
+                        id = proximoId++,
+                        texto = montarTexto(l),
+                        confianca = l.confianca,
+                        destinatario = l.destinatario,
+                        textoBruto = l.textoBruto,
+                        origem = l.origem
+                    )
+                }
+            }
+
+            val duvidosos = achados.count { it.confianca != Confianca.ALTA }
+            _ui.value = _ui.value.copy(
+                carregando = false, progresso = null,
+                revisao = _ui.value.revisao + achados,
+                mensagem = "${achados.size} endereco(s) lido(s) em ${uris.size} foto(s)." +
+                        if (duvidosos > 0) " $duvidosos precisa(m) de conferencia." else ""
+            )
+        }
+    }
+
+    private fun montarTexto(l: EnderecoLido): String {
+        val partes = mutableListOf(l.endereco)
+        l.cidade?.let { if (!l.endereco.contains(it, ignoreCase = true)) partes.add(it) }
+        return partes.joinToString(", ").replace(Regex("""\s*,\s*,+"""), ", ").trim()
+    }
+
+    fun editarRevisao(id: Int, texto: String) {
+        _ui.value = _ui.value.copy(
+            revisao = _ui.value.revisao.map { if (it.id == id) it.copy(texto = texto) else it }
+        )
+    }
+
+    fun alternarRevisao(id: Int) {
+        _ui.value = _ui.value.copy(
+            revisao = _ui.value.revisao.map { if (it.id == id) it.copy(incluir = !it.incluir) else it }
+        )
+    }
+
+    fun descartarRevisao() {
+        _ui.value = _ui.value.copy(revisao = emptyList())
+    }
+
+    /** Confirma a fila de revisao, grava como entregas e ja dispara a geocodificacao. */
+    fun confirmarRevisao() {
+        viewModelScope.launch {
+            val itens = _ui.value.revisao.filter { it.incluir && it.texto.isNotBlank() }
+            if (itens.isEmpty()) {
+                _ui.value = _ui.value.copy(mensagem = "Nada selecionado para importar.")
+                return@launch
+            }
+            val jaExistem = entregaDao.todas()
+            val vistos = jaExistem.map { normalizar(it.enderecoBruto) }.toMutableSet()
+            var proximoCodigo = jaExistem.size
+
+            val novas = mutableListOf<Entrega>()
+            var repetidos = 0
+            itens.forEach { item ->
+                val chave = normalizar(item.texto)
+                if (!vistos.add(chave)) { repetidos++; return@forEach }
+                proximoCodigo++
+                novas += Entrega(
+                    codigo = "$proximoCodigo",
+                    enderecoBruto = item.texto,
+                    tipo = Geocodificador.classificar(
+                        listOfNotNull(item.destinatario, item.texto).joinToString(" ")
+                    )
+                )
+            }
+
+            entregaDao.inserirVarias(novas)
+            _ui.value = _ui.value.copy(
+                revisao = emptyList(),
+                mensagem = "${novas.size} entrega(s) importada(s)." +
+                        if (repetidos > 0) " $repetidos repetida(s) ignorada(s)." else ""
+            )
+            geocodificarPendentes()
+        }
+    }
+
+    /** Chave de deduplicacao: ignora acento, pontuacao e caixa. */
+    private fun normalizar(s: String): String =
+        s.lowercase().replace(Regex("""[^a-z0-9]"""), "")
 
     fun apagarEntrega(e: Entrega) = viewModelScope.launch { entregaDao.apagar(e) }
 
