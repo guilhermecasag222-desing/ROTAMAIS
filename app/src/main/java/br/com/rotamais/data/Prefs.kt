@@ -68,6 +68,16 @@ class Prefs(ctx: Context) {
         get() = sp.getFloat("abastecimentoValor", 0f).toDouble()
         set(v) { sp.edit().putFloat("abastecimentoValor", v.toFloat()).apply() }
 
+    /** Pacote do app que o servico de leitura observa. Vazio = qualquer app. */
+    var pacoteAlvo: String
+        get() = sp.getString("pacoteAlvo", "") ?: ""
+        set(v) { sp.edit().putString("pacoteAlvo", v).apply() }
+
+    /** Ultimo app visto pelo servico, para o usuario confirmar o alvo sem digitar nada. */
+    var ultimoPacoteVisto: String
+        get() = sp.getString("ultimoPacoteVisto", "") ?: ""
+        set(v) { sp.edit().putString("ultimoPacoteVisto", v).apply() }
+
     var veiculo: String
         get() = sp.getString("veiculo", "Ford Fiesta Sedan 2013") ?: ""
         set(v) { sp.edit().putString("veiculo", v).apply() }

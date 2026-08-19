@@ -47,6 +47,18 @@ data class RotaHistorico(
     val custo: Double
 )
 
+/**
+ * Texto pescado da tela de outro app pelo servico de acessibilidade.
+ * Fica cru de proposito: quem interpreta e a fila de revisao, nunca o servico.
+ */
+@Entity(tableName = "capturas")
+data class Captura(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val texto: String,
+    val pacote: String,
+    val criadaEm: Long = System.currentTimeMillis()
+)
+
 class Conversores {
     @TypeConverter fun tipoParaTexto(v: TipoLocal): String = v.name
     @TypeConverter fun textoParaTipo(v: String): TipoLocal =

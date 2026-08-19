@@ -5,6 +5,7 @@ import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import br.com.rotamais.data.AppDatabase
+import br.com.rotamais.data.Captura
 import br.com.rotamais.data.Entrega
 import br.com.rotamais.data.Prefs
 import br.com.rotamais.data.RotaHistorico
@@ -67,12 +68,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val db = AppDatabase.obter(app)
     private val entregaDao = db.entregaDao()
     private val rotaDao = db.rotaDao()
+    private val capturaDao = db.capturaDao()
     val prefs = Prefs(app)
 
     val entregas: StateFlow<List<Entrega>> = entregaDao.observarTodas()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val historico: StateFlow<List<RotaHistorico>> = rotaDao.observarTodas()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Telas capturadas pelo servico de leitura, ainda nao interpretadas. */
+    val capturas: StateFlow<List<Captura>> = capturaDao.observarTodas()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val _ui = MutableStateFlow(UiState())
@@ -250,6 +256,64 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             )
         }
     }
+
+    // -------------------------------------------- Leitura automatica da tela
+
+    /** Interpreta o que o servico pescou e joga na fila de conferencia. */
+    fun processarCapturas() {
+        viewModelScope.launch {
+            val capturado = capturaDao.todas()
+            if (capturado.isEmpty()) {
+                _ui.value = _ui.value.copy(
+                    mensagem = "Nenhuma tela capturada ainda. Abra o app de entregas e " +
+                            "navegue por ele com a leitura ligada."
+                )
+                return@launch
+            }
+            _ui.value = _ui.value.copy(carregando = true, progresso = "Interpretando...")
+
+            val jaSalvas = entregaDao.todas().map { normalizar(it.enderecoBruto) }.toMutableSet()
+            val fila = _ui.value.revisao.toMutableList()
+            fila.forEach { jaSalvas.add(normalizar(it.texto)) }
+            var proximoId = fila.maxOfOrNull { it.id }?.plus(1) ?: 0
+
+            capturado.forEach { c ->
+                LeitorEtiqueta.interpretar(c.texto, "tela").forEach { l ->
+                    val t = montarTexto(l)
+                    if (t.isBlank() || !jaSalvas.add(normalizar(t))) return@forEach
+                    fila += ItemRevisao(
+                        id = proximoId++,
+                        texto = t,
+                        confianca = l.confianca,
+                        destinatario = l.destinatario,
+                        textoBruto = l.textoBruto,
+                        origem = "tela"
+                    )
+                }
+            }
+
+            capturaDao.apagarTudo()
+            _ui.value = _ui.value.copy(
+                carregando = false, progresso = null,
+                revisao = fila,
+                mensagem = if (fila.isEmpty())
+                    "Li ${capturado.size} tela(s), mas nao reconheci endereco. " +
+                            "Use 'ver texto lido' para eu ajustar o interpretador."
+                else "${fila.size} endereco(s) para conferir."
+            )
+        }
+    }
+
+    fun limparCapturas() = viewModelScope.launch { capturaDao.apagarTudo() }
+
+    /** Fixa como alvo o ultimo app que o servico viu, sem o usuario digitar pacote. */
+    fun fixarAppAlvo(): String {
+        val p = prefs.ultimoPacoteVisto
+        if (p.isNotBlank()) prefs.pacoteAlvo = p
+        return p
+    }
+
+    fun liberarAppAlvo() { prefs.pacoteAlvo = "" }
 
     /**
      * Recebe cada leitura do scanner continuo. Roda na thread da camera, entao usa

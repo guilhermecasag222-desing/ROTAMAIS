@@ -1,5 +1,7 @@
 package br.com.rotamais.ui
 
+import android.content.Intent
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -20,6 +22,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -28,7 +31,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import br.com.rotamais.captura.ServicoLeitura
 import br.com.rotamais.data.Entrega
 import br.com.rotamais.data.StatusEntrega
 import br.com.rotamais.data.TipoLocal
@@ -83,6 +91,8 @@ private fun Captura(
     var mostrarManual by remember { mutableStateOf(false) }
 
     Text("Capturar entregas", style = MaterialTheme.typography.headlineMedium)
+
+    LeituraAutomatica(vm)
 
     Painel("Scanner") {
         Text(
@@ -145,6 +155,84 @@ private fun Captura(
                 aoAlternarTipo = { vm.alternarTipo(e) },
                 aoApagar = { vm.apagarEntrega(e) },
                 aoReabrir = { vm.reabrir(e) })
+        }
+    }
+}
+
+// -------------------------------------------------------- Leitura automatica
+
+/**
+ * Captura sem esforco: o servico de acessibilidade le a tela do app de entregas
+ * enquanto o entregador o usa normalmente. Nada de foto, nada de toque extra.
+ */
+@Composable
+private fun LeituraAutomatica(vm: MainViewModel) {
+
+    val ctx = LocalContext.current
+    val capturas by vm.capturas.collectAsState()
+    var ativo by remember { mutableStateOf(ServicoLeitura.ativo(ctx)) }
+    var alvo by remember { mutableStateOf(vm.prefs.pacoteAlvo) }
+
+    // Reconfere ao voltar das configuracoes do Android.
+    val ciclo = LocalLifecycleOwner.current
+    DisposableEffect(ciclo) {
+        val obs = LifecycleEventObserver { _, evento ->
+            if (evento == Lifecycle.Event.ON_RESUME) {
+                ativo = ServicoLeitura.ativo(ctx)
+                alvo = vm.prefs.pacoteAlvo
+            }
+        }
+        ciclo.lifecycle.addObserver(obs)
+        onDispose { ciclo.lifecycle.removeObserver(obs) }
+    }
+
+    Painel("Leitura automatica da tela") {
+        Text(
+            if (ativo) "Ligada. Abra o Envio Logistics e use normalmente: o ROTA+ vai " +
+                    "pescando os enderecos que aparecerem."
+            else "Desligada. Com ela ligada voce nao precisa fotografar nem escanear nada: " +
+                    "o ROTA+ le os enderecos da tela do app de entregas enquanto voce o usa.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (ativo) MaterialTheme.colorScheme.primary
+            else MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        if (!ativo) {
+            BotaoGrande("LIGAR LEITURA AUTOMATICA", cor = Color(0xFF4FA8FF)) {
+                ctx.startActivity(
+                    Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+            }
+            Text(
+                "Vai abrir as configuracoes do Android. Procure ROTA+ na lista e ative.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        } else {
+            Linha("Telas capturadas", "${capturas.size}", destaque = true)
+
+            BotaoGrande(
+                if (capturas.isEmpty()) "NADA CAPTURADO AINDA"
+                else "CONFERIR ${capturas.size} CAPTURA(S)",
+                cor = if (capturas.isEmpty()) null else Color(0xFF22D07A),
+                habilitado = capturas.isNotEmpty()
+            ) { vm.processarCapturas() }
+
+            Text(
+                if (alvo.isBlank()) "Lendo qualquer app."
+                else "Lendo so: $alvo",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                TextButton(onClick = {
+                    val p = vm.fixarAppAlvo()
+                    alvo = p
+                }) { Text("so o ultimo app usado") }
+                TextButton(onClick = { vm.liberarAppAlvo(); alvo = "" }) { Text("qualquer app") }
+                TextButton(onClick = { vm.limparCapturas() }) { Text("limpar") }
+            }
         }
     }
 }

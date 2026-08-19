@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">ROTA+</string>
+    <string name="descricao_servico_leitura">Le os enderecos que aparecem na tela do seu app de entregas enquanto voce o usa, para montar a rota otimizada. O ROTA+ apenas le: nao toca, nao clica e nao altera nada em outros aplicativos.</string>
 </resources>

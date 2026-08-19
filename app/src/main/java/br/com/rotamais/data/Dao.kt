@@ -51,6 +51,25 @@ interface EntregaDao {
 }
 
 @Dao
+interface CapturaDao {
+
+    @Query("SELECT * FROM capturas ORDER BY criadaEm ASC")
+    fun observarTodas(): Flow<List<Captura>>
+
+    @Query("SELECT * FROM capturas ORDER BY criadaEm ASC")
+    suspend fun todas(): List<Captura>
+
+    @Query("SELECT COUNT(*) FROM capturas WHERE texto = :texto")
+    suspend fun quantasComTexto(texto: String): Int
+
+    @Insert
+    suspend fun inserir(c: Captura)
+
+    @Query("DELETE FROM capturas")
+    suspend fun apagarTudo()
+}
+
+@Dao
 interface RotaDao {
 
     @Query("SELECT * FROM rotas ORDER BY fimEm DESC")
