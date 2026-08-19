@@ -1,0 +1,2 @@
+-keep class br.com.rotamais.data.** { *; }
+-dontwarn org.jetbrains.annotations.**
