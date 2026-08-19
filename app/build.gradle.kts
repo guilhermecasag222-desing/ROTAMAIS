@@ -58,5 +58,11 @@ dependencies {
     // OCR das etiquetas. Roda 100% no aparelho, offline, sem chave e sem custo.
     implementation("com.google.mlkit:text-recognition:16.0.1")
 
+    // Camera para o modo scanner continuo.
+    implementation("androidx.camera:camera-core:1.3.4")
+    implementation("androidx.camera:camera-camera2:1.3.4")
+    implementation("androidx.camera:camera-lifecycle:1.3.4")
+    implementation("androidx.camera:camera-view:1.3.4")
+
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

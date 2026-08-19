@@ -36,6 +36,7 @@ import br.com.rotamais.ui.TelaEntregas
 import br.com.rotamais.ui.TelaHistorico
 import br.com.rotamais.ui.TelaHome
 import br.com.rotamais.ui.TelaRota
+import br.com.rotamais.ui.TelaScanner
 
 class MainActivity : ComponentActivity() {
 
@@ -146,7 +147,14 @@ fun App(compartilhadas: SnapshotStateList<Uri> = mutableListOf<Uri>().toMutableS
     ) { pad ->
         NavHost(nav, startDestination = "home", modifier = Modifier.padding(pad)) {
             composable("home") { TelaHome(vm) { destino -> nav.navigate(destino) } }
-            composable("entregas") { TelaEntregas(vm) }
+            composable("entregas") {
+                TelaEntregas(vm) { nav.navigate("scanner") }
+            }
+            composable("scanner") {
+                TelaScanner(vm) {
+                    nav.navigate("entregas") { popUpTo("entregas") { inclusive = true } }
+                }
+            }
             composable("rota") { TelaRota(vm) }
             composable("consumo") { TelaConsumo(vm) }
             composable("historico") { TelaHistorico(vm) }

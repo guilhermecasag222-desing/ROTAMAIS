@@ -35,7 +35,7 @@ import br.com.rotamais.data.TipoLocal
 import br.com.rotamais.ocr.Confianca
 
 @Composable
-fun TelaEntregas(vm: MainViewModel) {
+fun TelaEntregas(vm: MainViewModel, aoAbrirScanner: () -> Unit = {}) {
 
     val ui by vm.ui.collectAsState()
 
@@ -53,13 +53,17 @@ fun TelaEntregas(vm: MainViewModel) {
         }
 
         if (ui.revisao.isNotEmpty()) {
-            Revisao(vm)
+            Revisao(vm, aoAbrirScanner)
         } else {
-            Captura(vm) {
-                selecionarFotos.launch(
-                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                )
-            }
+            Captura(
+                vm = vm,
+                aoEscolherFotos = {
+                    selecionarFotos.launch(
+                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                    )
+                },
+                aoAbrirScanner = aoAbrirScanner
+            )
         }
     }
 }
@@ -67,7 +71,11 @@ fun TelaEntregas(vm: MainViewModel) {
 // ------------------------------------------------------------------ Captura
 
 @Composable
-private fun Captura(vm: MainViewModel, aoEscolherFotos: () -> Unit) {
+private fun Captura(
+    vm: MainViewModel,
+    aoEscolherFotos: () -> Unit,
+    aoAbrirScanner: () -> Unit
+) {
 
     val ui by vm.ui.collectAsState()
     val entregas by vm.entregas.collectAsState()
@@ -76,15 +84,25 @@ private fun Captura(vm: MainViewModel, aoEscolherFotos: () -> Unit) {
 
     Text("Capturar entregas", style = MaterialTheme.typography.headlineMedium)
 
-    Painel("Pelas fotos das etiquetas") {
+    Painel("Scanner") {
         Text(
-            "Fotografe a etiqueta de cada pacote com a camera normal do celular enquanto " +
-                    "carrega o carro. Depois importe todas de uma vez: a leitura roda offline, " +
-                    "no proprio aparelho. Pode empilhar varias etiquetas na mesma foto.",
+            "Passe o celular por cima dos pacotes, como um leitor de supermercado. " +
+                    "O app le as etiquetas sozinho, conta na tela e ignora repetidas. " +
+                    "Sem foto, sem toque, funciona offline.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        BotaoGrande("IMPORTAR FOTOS DAS ETIQUETAS", cor = Color(0xFF22D07A)) { aoEscolherFotos() }
+        BotaoGrande("ABRIR SCANNER", cor = Color(0xFF22D07A)) { aoAbrirScanner() }
+    }
+
+    Painel("Ou por fotos ja tiradas") {
+        Text(
+            "Se preferir fotografar antes, importe as fotos de uma vez. " +
+                    "Varias etiquetas na mesma foto viram varias entregas.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        BotaoGrande("IMPORTAR FOTOS") { aoEscolherFotos() }
     }
 
     ui.mensagem?.let {
@@ -134,7 +152,7 @@ private fun Captura(vm: MainViewModel, aoEscolherFotos: () -> Unit) {
 // ------------------------------------------------------------------ Revisao
 
 @Composable
-private fun Revisao(vm: MainViewModel) {
+private fun Revisao(vm: MainViewModel, aoAbrirScanner: () -> Unit) {
 
     val ui by vm.ui.collectAsState()
     val duvidosos = ui.revisao.count { it.confianca != Confianca.ALTA }
@@ -151,6 +169,7 @@ private fun Revisao(vm: MainViewModel) {
         BotaoGrande("IMPORTAR", Modifier.weight(1f), cor = Color(0xFF22D07A)) {
             vm.confirmarRevisao()
         }
+        BotaoGrande("LER MAIS", Modifier.weight(1f)) { aoAbrirScanner() }
         BotaoGrande("DESCARTAR", Modifier.weight(1f)) { vm.descartarRevisao() }
     }
 

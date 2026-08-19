@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -247,6 +248,38 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 mensagem = "${achados.size} endereco(s) lido(s) em ${uris.size} foto(s)." +
                         if (duvidosos > 0) " $duvidosos precisa(m) de conferencia." else ""
             )
+        }
+    }
+
+    /**
+     * Recebe cada leitura do scanner continuo. Roda na thread da camera, entao usa
+     * update{} para nao perder leitura concorrente. Endereco repetido e descartado
+     * em silencio -- a mesma etiqueta passa por dezenas de frames.
+     */
+    fun processarLeituraScanner(texto: String) {
+        val achados = LeitorEtiqueta.interpretar(texto, "scanner")
+            .filter { it.confianca != Confianca.BAIXA }
+        if (achados.isEmpty()) return
+
+        _ui.update { atual ->
+            val vistos = (atual.revisao.map { normalizar(it.texto) } +
+                    entregas.value.map { normalizar(it.enderecoBruto) }).toMutableSet()
+            var proximoId = atual.revisao.maxOfOrNull { it.id }?.plus(1) ?: 0
+            val novos = mutableListOf<ItemRevisao>()
+
+            achados.forEach { l ->
+                val t = montarTexto(l)
+                if (t.isBlank() || !vistos.add(normalizar(t))) return@forEach
+                novos += ItemRevisao(
+                    id = proximoId++,
+                    texto = t,
+                    confianca = l.confianca,
+                    destinatario = l.destinatario,
+                    textoBruto = l.textoBruto,
+                    origem = "scanner"
+                )
+            }
+            if (novos.isEmpty()) atual else atual.copy(revisao = atual.revisao + novos)
         }
     }
 

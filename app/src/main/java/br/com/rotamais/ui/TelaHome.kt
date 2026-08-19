@@ -75,9 +75,11 @@ fun TelaHome(vm: MainViewModel, irPara: (String) -> Unit) {
             }
         }
 
+        BotaoGrande("ESCANEAR PACOTES", cor = Color(0xFF22D07A)) { irPara("scanner") }
+
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            BotaoGrande("CAPTURAR\nENTREGAS", Modifier.weight(1f)) { irPara("entregas") }
-            BotaoGrande("OTIMIZAR\nROTA", Modifier.weight(1f), cor = Color(0xFF22D07A)) {
+            BotaoGrande("ENTREGAS", Modifier.weight(1f)) { irPara("entregas") }
+            BotaoGrande("OTIMIZAR\nROTA", Modifier.weight(1f)) {
                 vm.otimizar(); irPara("rota")
             }
         }
