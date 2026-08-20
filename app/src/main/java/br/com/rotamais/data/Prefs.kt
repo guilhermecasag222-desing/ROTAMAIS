@@ -78,6 +78,14 @@ class Prefs(ctx: Context) {
         get() = sp.getString("ultimoPacoteVisto", "") ?: ""
         set(v) { sp.edit().putString("ultimoPacoteVisto", v).apply() }
 
+    /**
+     * Quantos km cabem na largura do print do mapa. Nao muda a ORDEM das paradas
+     * (a geometria e a mesma), so a estimativa de km, tempo e combustivel.
+     */
+    var larguraMapaKm: Double
+        get() = sp.getFloat("larguraMapaKm", 12.0f).toDouble()
+        set(v) { sp.edit().putFloat("larguraMapaKm", v.toFloat()).apply() }
+
     var veiculo: String
         get() = sp.getString("veiculo", "Ford Fiesta Sedan 2013") ?: ""
         set(v) { sp.edit().putString("veiculo", v).apply() }

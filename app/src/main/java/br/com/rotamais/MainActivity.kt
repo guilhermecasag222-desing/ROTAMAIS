@@ -35,6 +35,7 @@ import br.com.rotamais.ui.TelaConsumo
 import br.com.rotamais.ui.TelaEntregas
 import br.com.rotamais.ui.TelaHistorico
 import br.com.rotamais.ui.TelaHome
+import br.com.rotamais.ui.TelaMapa
 import br.com.rotamais.ui.TelaRota
 import br.com.rotamais.ui.TelaScanner
 
@@ -81,10 +82,10 @@ private data class Aba(val rota: String, val titulo: String)
 
 private val ABAS = listOf(
     Aba("home", "Inicio"),
+    Aba("mapa", "Mapa"),
     Aba("entregas", "Entregas"),
     Aba("rota", "Rota"),
-    Aba("consumo", "Consumo"),
-    Aba("historico", "Historico")
+    Aba("consumo", "Consumo")
 )
 
 @Composable
@@ -147,6 +148,7 @@ fun App(compartilhadas: SnapshotStateList<Uri> = mutableListOf<Uri>().toMutableS
     ) { pad ->
         NavHost(nav, startDestination = "home", modifier = Modifier.padding(pad)) {
             composable("home") { TelaHome(vm) { destino -> nav.navigate(destino) } }
+            composable("mapa") { TelaMapa(vm) }
             composable("entregas") {
                 TelaEntregas(vm) { nav.navigate("scanner") }
             }

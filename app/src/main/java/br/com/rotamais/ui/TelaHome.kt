@@ -75,7 +75,7 @@ fun TelaHome(vm: MainViewModel, irPara: (String) -> Unit) {
             }
         }
 
-        BotaoGrande("ESCANEAR PACOTES", cor = Color(0xFF22D07A)) { irPara("scanner") }
+        BotaoGrande("ROTA PELO PRINT DO MAPA", cor = Color(0xFF22D07A)) { irPara("mapa") }
 
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             BotaoGrande("ENTREGAS", Modifier.weight(1f)) { irPara("entregas") }

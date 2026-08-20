@@ -17,12 +17,36 @@ android {
         versionName = "0.1.0"
     }
 
+    /**
+     * Chave fixa do projeto. Sem ela, cada build no GitHub Actions roda numa maquina
+     * nova, o Gradle gera uma chave de debug diferente e o Android recusa instalar
+     * por cima da versao anterior ("App nao instalado", sem explicar o motivo).
+     * O CI gera o arquivo na primeira vez; depois ele fica versionado no repositorio.
+     */
+    signingConfigs {
+        create("rotamais") {
+            val chave = rootProject.file("chave-rotamais.jks")
+            if (chave.exists()) {
+                storeFile = chave
+                storePassword = "rotamais"
+                keyAlias = "rotamais"
+                keyPassword = "rotamais"
+                enableV1Signing = true
+                enableV2Signing = true
+                enableV3Signing = true
+            }
+        }
+    }
+
     buildTypes {
         debug {
             isMinifyEnabled = false
         }
         release {
             isMinifyEnabled = false
+            // APK depuravel e um dos sinais que mais irrita Play Protect e Auto Blocker.
+            isDebuggable = false
+            signingConfig = signingConfigs.getByName("rotamais").takeIf { it.storeFile != null }
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
@@ -32,7 +56,10 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
-    buildFeatures { compose = true }
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
     packaging { resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" } }
 }
 
