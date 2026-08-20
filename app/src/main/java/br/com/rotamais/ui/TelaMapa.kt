@@ -53,6 +53,10 @@ fun TelaMapa(vmPrincipal: MainViewModel) {
         ActivityResultContracts.PickVisualMedia()
     ) { uri -> if (uri != null) vm.carregarPrint(uri) }
 
+    val escolherZoom = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickVisualMedia()
+    ) { uri -> if (uri != null) vm.adicionarPrintZoom(uri) }
+
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -147,6 +151,40 @@ fun TelaMapa(vmPrincipal: MainViewModel) {
                     Text("Lendo sem filtro: todo numero da imagem virou parada.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.secondary)
+                }
+            }
+
+            Painel("Baloes amontoados") {
+                if (e.zoomPendente != null) {
+                    Text(
+                        "Li ${e.zoomPendente.size} parada(s) nesse print com zoom, mas nao " +
+                                "achei numero em comum para encaixar sozinho.\n\n" +
+                                "TOQUE NO MAPA ACIMA em cima do amontoado de onde veio " +
+                                "esse zoom.",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = Color(0xFFE0B341)
+                    )
+                    BotaoGrande("CANCELAR ESSE ZOOM") { vm.cancelarZoomPendente() }
+                } else {
+                    Text(
+                        "Onde os baloes ficam empilhados, o OCR le um e perde o resto. " +
+                                "De zoom naquela regiao no app de entregas, tire outro print " +
+                                "e mande aqui: eu encaixo no lugar certo usando os numeros " +
+                                "que aparecem nos dois.\n\n" +
+                                "Deixe pelo menos dois numeros ja reconhecidos visiveis no " +
+                                "zoom -- sao eles que servem de referencia.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    BotaoGrande("ADICIONAR PRINT COM ZOOM", cor = Color(0xFF4FA8FF)) {
+                        escolherZoom.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                        )
+                    }
+                    val deZoom = e.marcadores.count { it.geracao > 0 }
+                    if (deZoom > 0) {
+                        Linha("Vindas de zoom", "$deZoom", destaque = true)
+                    }
                 }
             }
 
@@ -350,6 +388,16 @@ private fun MapaInterativo(e: MapaState, vm: MapaViewModel, larguraPx: Int, altu
                 }
             }
 
+            // Paradas trazidas de um print com zoom: nao estao desenhadas na
+            // imagem de fundo, entao precisam de um marcador proprio.
+            e.marcadores.filter { it.geracao > 0 && it.ativo }.forEach {
+                drawCircle(
+                    color = Color(0xFF4FA8FF),
+                    radius = size.width * 0.020f,
+                    center = ponto(it.x, it.y)
+                )
+            }
+
             // Paradas desligadas: circulo vermelho por cima.
             e.marcadores.filter { !it.ativo }.forEach {
                 drawCircle(
@@ -368,9 +416,14 @@ private fun MapaInterativo(e: MapaState, vm: MapaViewModel, larguraPx: Int, altu
             }
         }
 
-        if (e.origemX == null && e.marcadores.isNotEmpty()) {
+        val dica = when {
+            e.zoomPendente != null -> "toque no amontoado de onde veio o zoom"
+            e.origemX == null && e.marcadores.isNotEmpty() -> "toque onde voce esta"
+            else -> null
+        }
+        if (dica != null) {
             Text(
-                "toque onde voce esta",
+                dica,
                 modifier = Modifier.align(Alignment.BottomCenter).padding(8.dp),
                 style = MaterialTheme.typography.titleMedium,
                 color = Color.White

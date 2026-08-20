@@ -23,7 +23,9 @@ data class Marcador(
     val x: Float,
     val y: Float,
     val corFundo: Int,
-    val ativo: Boolean = true
+    val ativo: Boolean = true,
+    /** 0 = veio do print geral; 1, 2... = veio de um print com zoom. */
+    val geracao: Int = 0
 )
 
 data class LeituraMapa(

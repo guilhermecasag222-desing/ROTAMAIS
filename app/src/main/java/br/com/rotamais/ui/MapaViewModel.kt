@@ -7,6 +7,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import br.com.rotamais.data.Prefs
 import br.com.rotamais.mapa.Diagnostico
+import br.com.rotamais.mapa.Juncao
 import br.com.rotamais.mapa.LeitorMapa
 import br.com.rotamais.mapa.Marcador
 import br.com.rotamais.mapa.ResultadoSequencia
@@ -29,6 +30,8 @@ data class MapaState(
     val paradasReais: Int? = null,
     /** Quantos pacotes estao no carro (uma parada pode ter varios). */
     val pacotes: Int? = null,
+    /** Leitura de um print com zoom esperando o usuario apontar a regiao. */
+    val zoomPendente: List<Marcador>? = null,
     val mensagem: String? = null
 ) {
     /** Quantas paradas o OCR deixou passar, se o total real foi informado. */
@@ -73,9 +76,26 @@ class MapaViewModel(app: Application) : AndroidViewModel(app) {
         carregarPrint(uri, semFiltros = true)
     }
 
-    /** Um toque marca de onde a rota comeca; o proximo recalcula dali. */
+    /**
+     * Um toque no mapa. Enquanto houver print com zoom esperando, o toque aponta
+     * a regiao dele; fora disso, marca de onde a rota comeca.
+     */
     fun definirOrigem(x: Float, y: Float) {
-        _estado.value = _estado.value.copy(origemX = x, origemY = y, resultado = null)
+        val atual = _estado.value
+        val pendente = atual.zoomPendente
+        if (pendente != null) {
+            val largura = atual.bitmap?.width ?: return
+            val geracao = atual.marcadores.maxOfOrNull { it.geracao }?.plus(1) ?: 1
+            val r = Juncao.porToque(atual.marcadores, pendente, x, y, largura, geracao)
+            _estado.value = atual.copy(
+                marcadores = r.marcadores,
+                zoomPendente = null,
+                mensagem = r.erro ?: "Juntei ${r.adicionados} parada(s) nessa regiao."
+            )
+            calcular()
+            return
+        }
+        _estado.value = atual.copy(origemX = x, origemY = y, resultado = null)
         calcular()
     }
 
@@ -126,6 +146,60 @@ class MapaViewModel(app: Application) : AndroidViewModel(app) {
             origemY = primeira.marcador.y
         )
         calcular()
+    }
+
+    // ------------------------------------------------- Print com zoom
+
+    /**
+     * Le um segundo print, com zoom na regiao amontoada, e junta ao geral.
+     * Se nao houver numeros em comum suficientes, guarda a leitura e pede que o
+     * usuario aponte a regiao com um toque.
+     */
+    fun adicionarPrintZoom(uri: Uri) {
+        viewModelScope.launch {
+            val atual = _estado.value
+            val base = atual.bitmap
+            if (base == null) {
+                _estado.value = atual.copy(mensagem = "Carregue primeiro o print geral.")
+                return@launch
+            }
+            _estado.value = atual.copy(carregando = true)
+
+            val leitura = LeitorMapa.ler(getApplication(), uri, atual.semFiltros)
+            if (leitura == null || leitura.marcadores.isEmpty()) {
+                _estado.value = atual.copy(
+                    carregando = false,
+                    mensagem = "Nao consegui ler numero nenhum nesse print com zoom."
+                )
+                return@launch
+            }
+
+            val geracao = atual.marcadores.maxOfOrNull { it.geracao }?.plus(1) ?: 1
+            val r = Juncao.automatica(atual.marcadores, leitura.marcadores, geracao)
+
+            if (r.erro != null) {
+                // Sem ancora: espera o toque que aponta a regiao.
+                _estado.value = atual.copy(
+                    carregando = false,
+                    zoomPendente = leitura.marcadores,
+                    mensagem = r.erro
+                )
+                return@launch
+            }
+
+            _estado.value = atual.copy(
+                carregando = false,
+                marcadores = r.marcadores,
+                zoomPendente = null,
+                mensagem = "Juntei ${r.adicionados} parada(s) nova(s), usando " +
+                        "${r.ancoras.joinToString(" e ")} como referencia."
+            )
+            calcular()
+        }
+    }
+
+    fun cancelarZoomPendente() {
+        _estado.value = _estado.value.copy(zoomPendente = null, mensagem = null)
     }
 
     fun definirParadasReais(n: Int?) { _estado.value = _estado.value.copy(paradasReais = n) }
