@@ -23,6 +23,8 @@ data class Marcador(
     val x: Float,
     val y: Float,
     val corFundo: Int,
+    /** Altura do numero em pixels. Denuncia o zoom com que o print foi tirado. */
+    val altura: Float = 0f,
     val ativo: Boolean = true,
     /** 0 = veio do print geral; 1, 2... = veio de um print com zoom. */
     val geracao: Int = 0
@@ -102,19 +104,26 @@ object LeitorMapa {
             bitmap, emptyList(), Diagnostico(), "Nao consegui ler a imagem."
         )
 
-        val candidatos = mutableListOf<Pair<Int, Rect>>()
-        for (bloco in texto.textBlocks) {
-            for (linha in bloco.lines) {
-                for (elemento in linha.elements) {
-                    val t = elemento.text.trim()
-                    if (!Regex("""^\d{1,3}$""").matches(t)) continue
-                    val n = t.toIntOrNull() ?: continue
-                    if (n < 1 || n > 999) continue
-                    val caixa = elemento.boundingBox ?: continue
-                    candidatos += n to caixa
-                }
+        val candidatos = coletarNumeros(texto).toMutableList()
+
+        // Passada em blocos ampliados. Numero de balao tem ~20 px de altura num
+        // print de celular, no limite do que o reconhecedor enxerga; ampliado
+        // passa de 50 px e aparece muito mais, sobretudo onde estao amontoados.
+        candidatos += lerEmBlocos(bitmap)
+
+        // Mesmo numero visto na passada inteira e na de blocos.
+        val vistos = mutableListOf<Pair<Int, Rect>>()
+        val minimo = bitmap.width * 0.02f
+        for (c in candidatos) {
+            val repetido = vistos.any {
+                it.first == c.first &&
+                        abs(it.second.exactCenterX() - c.second.exactCenterX()) < minimo &&
+                        abs(it.second.exactCenterY() - c.second.exactCenterY()) < minimo
             }
+            if (!repetido) vistos += c
         }
+        candidatos.clear()
+        candidatos += vistos
         if (candidatos.isEmpty()) {
             return@withContext LeituraMapa(bitmap, emptyList(), Diagnostico(),
                 "Nao achei numero nenhum nesta imagem.")
@@ -154,7 +163,7 @@ object LeitorMapa {
                 val quaseBranco = hsv[1] < SATURACAO_MINIMA && hsv[2] > 0.88f
                 if (quaseBranco) { semCor++; continue }
             }
-            coloridos += Marcador(n, c.exactCenterX(), c.exactCenterY(), cor)
+            coloridos += Marcador(n, c.exactCenterX(), c.exactCenterY(), cor, c.height().toFloat())
         }
 
         // 4. Mesmo numero lido duas vezes quase no mesmo ponto.
@@ -178,6 +187,86 @@ object LeitorMapa {
                 "Li ${candidatos.size} numero(s), mas nenhum passou nos filtros."
             else null
         )
+    }
+
+    private fun coletarNumeros(texto: Text): List<Pair<Int, Rect>> {
+        val saida = mutableListOf<Pair<Int, Rect>>()
+        for (bloco in texto.textBlocks) {
+            for (linha in bloco.lines) {
+                for (elemento in linha.elements) {
+                    val t = elemento.text.trim()
+                    if (!Regex("""^\d{1,3}$""").matches(t)) continue
+                    val n = t.toIntOrNull() ?: continue
+                    if (n < 1 || n > 999) continue
+                    val caixa = elemento.boundingBox ?: continue
+                    saida += n to caixa
+                }
+            }
+        }
+        return saida
+    }
+
+    /**
+     * Divide a imagem em blocos com sobreposicao, amplia cada um e le.
+     * A sobreposicao garante que numero em cima de uma divisa apareca inteiro
+     * em pelo menos um bloco. As coordenadas voltam para o sistema da imagem
+     * original antes de sair daqui.
+     */
+    private suspend fun lerEmBlocos(bitmap: Bitmap): List<Pair<Int, Rect>> {
+        val colunas = 3
+        val linhas = if (bitmap.height > bitmap.width) 4 else 3
+        val sobreposicao = 0.18f
+        val ampliacao = 2f
+
+        val larguraBloco = bitmap.width / colunas
+        val alturaBloco = bitmap.height / linhas
+        val margemX = (larguraBloco * sobreposicao).toInt()
+        val margemY = (alturaBloco * sobreposicao).toInt()
+
+        val saida = mutableListOf<Pair<Int, Rect>>()
+
+        for (c in 0 until colunas) {
+            for (l in 0 until linhas) {
+                val x0 = (c * larguraBloco - margemX).coerceAtLeast(0)
+                val y0 = (l * alturaBloco - margemY).coerceAtLeast(0)
+                val x1 = ((c + 1) * larguraBloco + margemX).coerceAtMost(bitmap.width)
+                val y1 = ((l + 1) * alturaBloco + margemY).coerceAtMost(bitmap.height)
+                if (x1 - x0 < 40 || y1 - y0 < 40) continue
+
+                var recorte: Bitmap? = null
+                var ampliado: Bitmap? = null
+                try {
+                    recorte = Bitmap.createBitmap(bitmap, x0, y0, x1 - x0, y1 - y0)
+                    ampliado = Bitmap.createScaledBitmap(
+                        recorte,
+                        ((x1 - x0) * ampliacao).toInt(),
+                        ((y1 - y0) * ampliacao).toInt(),
+                        true
+                    )
+                    val entrada = InputImage.fromBitmap(ampliado, 0)
+                    val texto = suspendCancellableCoroutine<Text?> { cont ->
+                        reconhecedor.process(entrada)
+                            .addOnSuccessListener { if (cont.isActive) cont.resume(it) }
+                            .addOnFailureListener { if (cont.isActive) cont.resume(null) }
+                    } ?: continue
+
+                    for ((n, caixa) in coletarNumeros(texto)) {
+                        saida += n to Rect(
+                            x0 + (caixa.left / ampliacao).toInt(),
+                            y0 + (caixa.top / ampliacao).toInt(),
+                            x0 + (caixa.right / ampliacao).toInt(),
+                            y0 + (caixa.bottom / ampliacao).toInt()
+                        )
+                    }
+                } catch (e: Exception) {
+                    // Bloco que falhar nao derruba a leitura inteira.
+                } finally {
+                    ampliado?.recycle()
+                    if (recorte !== ampliado) recorte?.recycle()
+                }
+            }
+        }
+        return saida
     }
 
     /**

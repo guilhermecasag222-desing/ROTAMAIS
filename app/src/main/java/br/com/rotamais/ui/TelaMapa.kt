@@ -154,37 +154,37 @@ fun TelaMapa(vmPrincipal: MainViewModel) {
                 }
             }
 
-            Painel("Baloes amontoados") {
+            Painel("Varrer area por area") {
                 val pendente = e.zoomPendente
                 if (pendente != null) {
                     Text(
-                        "Li ${pendente.size} parada(s) nesse print com zoom, mas nao " +
-                                "achei numero em comum para encaixar sozinho.\n\n" +
-                                "TOQUE NO MAPA ACIMA em cima do amontoado de onde veio " +
-                                "esse zoom.",
+                        "Li ${pendente.size} parada(s) nesse print, mas nao achei numero " +
+                                "em comum para encaixar sozinho.\n\n" +
+                                "TOQUE NO MAPA ACIMA em cima da area de onde veio esse print.",
                         style = MaterialTheme.typography.titleMedium,
                         color = Color(0xFFE0B341)
                     )
-                    BotaoGrande("CANCELAR ESSE ZOOM") { vm.cancelarZoomPendente() }
+                    BotaoGrande("CANCELAR ESSE PRINT") { vm.cancelarZoomPendente() }
                 } else {
                     Text(
-                        "Onde os baloes ficam empilhados, o OCR le um e perde o resto. " +
-                                "De zoom naquela regiao no app de entregas, tire outro print " +
-                                "e mande aqui: eu encaixo no lugar certo usando os numeros " +
-                                "que aparecem nos dois.\n\n" +
-                                "Deixe pelo menos dois numeros ja reconhecidos visiveis no " +
-                                "zoom -- sao eles que servem de referencia.",
+                        "Numero pequeno o OCR perde, e onde os baloes se empilham ele le um " +
+                                "e ignora o resto. A saida e varrer: de zoom numa area no app " +
+                                "de entregas, tire um print, mande aqui, e repita para a " +
+                                "proxima area. Cada print novo soma ao que ja foi lido.\n\n" +
+                                "Regra unica: cada print precisa mostrar pelo menos um numero " +
+                                "que ja apareceu antes. E por ele que eu encaixo a area no " +
+                                "lugar certo. Dois numeros repetidos deixam o encaixe exato.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    BotaoGrande("ADICIONAR PRINT COM ZOOM", cor = Color(0xFF4FA8FF)) {
+                    BotaoGrande("ADICIONAR AREA (OUTRO PRINT)", cor = Color(0xFF4FA8FF)) {
                         escolherZoom.launch(
                             PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                         )
                     }
                     val deZoom = e.marcadores.count { it.geracao > 0 }
                     if (deZoom > 0) {
-                        Linha("Vindas de zoom", "$deZoom", destaque = true)
+                        Linha("Vindas de outros prints", "$deZoom", destaque = true)
                     }
                 }
             }

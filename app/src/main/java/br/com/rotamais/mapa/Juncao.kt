@@ -31,10 +31,28 @@ object Juncao {
             porNumeroBase[z.numero]?.let { b -> b to z }
         }
 
-        if (pares.size < 2) {
-            return Resultado(base, 0, pares.map { it.first.numero },
-                "Achei ${pares.size} numero(s) em comum entre os dois prints; preciso de 2. " +
-                        "Toque no mapa geral onde fica essa regiao.")
+        if (pares.isEmpty()) {
+            return Resultado(base, 0, emptyList(),
+                "Nenhum numero aparece nos dois prints, entao nao tenho referencia. " +
+                        "Toque no mapa acima onde fica essa area.")
+        }
+
+        // Com uma unica ancora falta a escala, mas ela pode ser deduzida do
+        // tamanho dos numeros: se no outro print eles saem com o dobro da
+        // altura, aquele print esta com o dobro do zoom.
+        if (pares.size == 1) {
+            val alturaBase = medianaAltura(base)
+            val alturaZoom = medianaAltura(zoom)
+            if (alturaBase <= 0f || alturaZoom <= 0f) {
+                return Resultado(base, 0, listOf(pares[0].first.numero),
+                    "So achei o numero ${pares[0].first.numero} em comum e nao consegui " +
+                            "estimar a escala. Toque no mapa acima onde fica essa area.")
+            }
+            val escala = (alturaBase / alturaZoom).toDouble()
+            val (b, z) = pares[0]
+            val deslocX = b.x - escala * z.x
+            val deslocY = b.y - escala * z.y
+            return aplicar(base, zoom, escala, deslocX, deslocY, listOf(b.numero), geracao)
         }
 
         // Centroides dos pontos em comum, nos dois sistemas de coordenadas.
@@ -87,6 +105,11 @@ object Juncao {
         val deslocY = alvoY - escala * qcy
 
         return aplicar(base, zoom, escala, deslocX, deslocY, emptyList(), geracao)
+    }
+
+    private fun medianaAltura(lista: List<Marcador>): Float {
+        val alturas = lista.map { it.altura }.filter { it > 0f }.sorted()
+        return if (alturas.isEmpty()) 0f else alturas[alturas.size / 2]
     }
 
     private fun aplicar(
