@@ -29,9 +29,39 @@ jobs:
       - name: Compilar APK de debug
         run: gradle assembleDebug --no-daemon --stacktrace
 
+      - name: Relatorio do APK (permissoes, sdk, assinatura)
+        run: |
+          set -x
+          APK=$(find app/build/outputs/apk/debug -name '*.apk' | head -1)
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)
+          {
+            echo "=== ARQUIVO ==="
+            ls -l "$APK"
+            sha256sum "$APK"
+            echo
+            echo "=== BADGING (sdk, permissoes efetivas apos merge) ==="
+            "${BT}aapt2" dump badging "$APK"
+            echo
+            echo "=== PERMISSOES (lista limpa) ==="
+            "${BT}aapt2" dump permissions "$APK"
+            echo
+            echo "=== ASSINATURA ==="
+            "${BT}apksigner" verify -v --print-certs "$APK"
+          } > apk-report.txt 2>&1
+          echo "----- inicio do relatorio -----"
+          cat apk-report.txt
+
       - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
           name: rotamais-debug-apk
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
+
+      - name: Publicar relatorio
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: apk-report
+          path: apk-report.txt
+          if-no-files-found: warn
