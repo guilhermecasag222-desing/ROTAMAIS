@@ -29,9 +29,23 @@ data class Marcador(
 data class LeituraMapa(
     val bitmap: Bitmap,
     val marcadores: List<Marcador>,
-    val descartados: Int,
+    val diagnostico: Diagnostico,
     val aviso: String? = null
 )
+
+/** Quantos numeros cairam em cada filtro. Serve para achar o filtro apertado demais. */
+data class Diagnostico(
+    val lidos: Int = 0,
+    val foraDaArea: Int = 0,
+    val tamanhoErrado: Int = 0,
+    val semCor: Int = 0,
+    val repetidos: Int = 0
+) {
+    val descartados: Int get() = foraDaArea + tamanhoErrado + semCor + repetidos
+
+    fun resumo(): String = "lidos $lidos - area $foraDaArea - tamanho $tamanhoErrado - " +
+            "cor $semCor - repetidos $repetidos"
+}
 
 /**
  * Le um print da tela do app de entregas e extrai os baloes numerados com a
@@ -48,16 +62,29 @@ object LeitorMapa {
         TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
     }
 
-    private const val LARGURA_MAX = 1600
+    private const val LARGURA_MAX = 2400
 
-    /** Faixas de tela ocupadas por barra de status, cabecalho e cartao inferior. */
-    private const val TOPO_IGNORADO = 0.11f
-    private const val RODAPE_IGNORADO = 0.82f
+    /**
+     * Faixas ignoradas por padrao. Generosas de proposito: a imagem pode ser um print
+     * (mapa ocupa quase tudo) ou uma foto da tela do celular (mapa deslocado e torto).
+     * Melhor deixar passar lixo, que o usuario desliga com um toque, do que comer parada.
+     */
+    private const val TOPO_IGNORADO = 0.04f
+    private const val RODAPE_IGNORADO = 0.94f
 
-    /** Abaixo disso o fundo e branco/cinza: rotulo de rodovia ou nome de rua, nao balao. */
-    private const val SATURACAO_MINIMA = 0.12f
+    /**
+     * Os baloes do app de entregas sao pastel -- verde claro, rosa claro, bege.
+     * Corte alto aqui derruba quase todas as paradas; so serve para descartar
+     * fundo branco puro, como o escudo de rodovia.
+     */
+    private const val SATURACAO_MINIMA = 0.05f
 
-    suspend fun ler(ctx: Context, uri: Uri): LeituraMapa? = withContext(Dispatchers.IO) {
+    /**
+     * @param semFiltros le tudo que for numero, sem descartar nada. Usado quando a
+     *        leitura normal traz poucas paradas.
+     */
+    suspend fun ler(ctx: Context, uri: Uri, semFiltros: Boolean = false): LeituraMapa? =
+        withContext(Dispatchers.IO) {
         val bitmap = carregarReduzido(ctx, uri) ?: return@withContext null
 
         val texto = try {
@@ -69,7 +96,9 @@ object LeitorMapa {
             }
         } catch (e: Exception) {
             null
-        } ?: return@withContext LeituraMapa(bitmap, emptyList(), 0, "Nao consegui ler a imagem.")
+        } ?: return@withContext LeituraMapa(
+            bitmap, emptyList(), Diagnostico(), "Nao consegui ler a imagem."
+        )
 
         val candidatos = mutableListOf<Pair<Int, Rect>>()
         for (bloco in texto.textBlocks) {
@@ -85,55 +114,66 @@ object LeitorMapa {
             }
         }
         if (candidatos.isEmpty()) {
-            return@withContext LeituraMapa(bitmap, emptyList(), 0,
-                "Nao achei numeros de parada nesta imagem.")
+            return@withContext LeituraMapa(bitmap, emptyList(), Diagnostico(),
+                "Nao achei numero nenhum nesta imagem.")
         }
 
-        var descartados = 0
+        var foraDaArea = 0
+        var tamanhoErrado = 0
+        var semCor = 0
+        var repetidos = 0
 
-        // 1. Fora da area do mapa: cabecalho e cartao de detalhe nao sao baloes.
+        // 1. Cabecalho e cartao de detalhe: nao sao baloes.
         val alturaImg = bitmap.height.toFloat()
-        val naArea = candidatos.filter { (_, c) ->
+        val naArea = if (semFiltros) candidatos else candidatos.filter { (_, c) ->
             val cy = c.exactCenterY() / alturaImg
             val dentro = cy in TOPO_IGNORADO..RODAPE_IGNORADO
-            if (!dentro) descartados++
+            if (!dentro) foraDaArea++
             dentro
         }
 
-        // 2. Tamanho fora do padrao: numeros de balao tem altura parecida entre si.
+        // 2. Altura muito fora da mediana. Faixa larga porque foto de tela tem
+        //    perspectiva e os numeros nao saem todos do mesmo tamanho.
         val alturas = naArea.map { it.second.height() }.sorted()
         val mediana = if (alturas.isEmpty()) 0 else alturas[alturas.size / 2]
-        val noTamanho = naArea.filter { (_, c) ->
-            val ok = mediana == 0 || (c.height() >= mediana * 0.55 && c.height() <= mediana * 1.9)
-            if (!ok) descartados++
+        val noTamanho = if (semFiltros) naArea else naArea.filter { (_, c) ->
+            val ok = mediana == 0 || (c.height() >= mediana * 0.40 && c.height() <= mediana * 2.6)
+            if (!ok) tamanhoErrado++
             ok
         }
 
-        // 3. Fundo sem cor: escudo de rodovia (BR-101), numero de rua, rotulo do mapa.
+        // 3. Fundo branco puro: escudo de rodovia, numero solto do mapa.
         val coloridos = mutableListOf<Marcador>()
         for ((n, c) in noTamanho) {
             val cor = corDoFundo(bitmap, c)
-            val hsv = FloatArray(3)
-            Color.colorToHSV(cor, hsv)
-            if (hsv[1] < SATURACAO_MINIMA) { descartados++; continue }
+            if (!semFiltros) {
+                val hsv = FloatArray(3)
+                Color.colorToHSV(cor, hsv)
+                val quaseBranco = hsv[1] < SATURACAO_MINIMA && hsv[2] > 0.88f
+                if (quaseBranco) { semCor++; continue }
+            }
             coloridos += Marcador(n, c.exactCenterX(), c.exactCenterY(), cor)
         }
 
-        // 4. Mesmo numero lido duas vezes quase no mesmo ponto: fica o primeiro.
+        // 4. Mesmo numero lido duas vezes quase no mesmo ponto.
+        val proximidade = bitmap.width * 0.03f
         val finais = mutableListOf<Marcador>()
         for (m in coloridos) {
             val repetido = finais.any {
-                it.numero == m.numero && abs(it.x - m.x) < 40 && abs(it.y - m.y) < 40
+                it.numero == m.numero &&
+                        abs(it.x - m.x) < proximidade && abs(it.y - m.y) < proximidade
             }
-            if (repetido) descartados++ else finais += m
+            if (repetido) repetidos++ else finais += m
         }
+
+        val diag = Diagnostico(candidatos.size, foraDaArea, tamanhoErrado, semCor, repetidos)
 
         LeituraMapa(
             bitmap = bitmap,
             marcadores = finais.sortedBy { it.numero },
-            descartados = descartados,
+            diagnostico = diag,
             aviso = if (finais.isEmpty())
-                "Li numeros, mas nenhum parecia balao de parada. Tente um print com mais zoom."
+                "Li ${candidatos.size} numero(s), mas nenhum passou nos filtros."
             else null
         )
     }

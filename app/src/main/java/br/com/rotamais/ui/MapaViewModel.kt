@@ -6,6 +6,7 @@ import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import br.com.rotamais.data.Prefs
+import br.com.rotamais.mapa.Diagnostico
 import br.com.rotamais.mapa.LeitorMapa
 import br.com.rotamais.mapa.Marcador
 import br.com.rotamais.mapa.ResultadoSequencia
@@ -17,8 +18,10 @@ import kotlinx.coroutines.launch
 data class MapaState(
     val carregando: Boolean = false,
     val bitmap: Bitmap? = null,
+    val uri: Uri? = null,
     val marcadores: List<Marcador> = emptyList(),
-    val descartados: Int = 0,
+    val diagnostico: Diagnostico = Diagnostico(),
+    val semFiltros: Boolean = false,
     val origemX: Float? = null,
     val origemY: Float? = null,
     val resultado: ResultadoSequencia? = null,
@@ -32,23 +35,34 @@ class MapaViewModel(app: Application) : AndroidViewModel(app) {
     private val _estado = MutableStateFlow(MapaState())
     val estado: StateFlow<MapaState> = _estado
 
-    fun carregarPrint(uri: Uri) {
+    fun carregarPrint(uri: Uri, semFiltros: Boolean = false) {
         viewModelScope.launch {
-            _estado.value = MapaState(carregando = true)
-            val leitura = LeitorMapa.ler(getApplication(), uri)
+            _estado.value = MapaState(carregando = true, uri = uri, semFiltros = semFiltros)
+            val leitura = LeitorMapa.ler(getApplication(), uri, semFiltros)
             if (leitura == null) {
                 _estado.value = MapaState(mensagem = "Nao consegui abrir a imagem.")
                 return@launch
             }
             _estado.value = MapaState(
                 bitmap = leitura.bitmap,
+                uri = uri,
+                semFiltros = semFiltros,
                 marcadores = leitura.marcadores,
-                descartados = leitura.descartados,
+                diagnostico = leitura.diagnostico,
+                // Comeca ja com uma sequencia pronta, do canto de baixo da imagem.
+                // Um toque muda de onde a rota parte.
+                origemX = leitura.bitmap.width / 2f,
+                origemY = leitura.bitmap.height * 0.92f,
                 mensagem = leitura.aviso
-                    ?: "${leitura.marcadores.size} parada(s) encontrada(s). " +
-                    "Toque no mapa onde voce esta agora."
             )
+            calcular()
         }
+    }
+
+    /** Rele a mesma imagem sem nenhum filtro, quando a leitura normal traz pouca coisa. */
+    fun relerSemFiltros() {
+        val uri = _estado.value.uri ?: return
+        carregarPrint(uri, semFiltros = true)
     }
 
     /** Um toque marca de onde a rota comeca; o proximo recalcula dali. */
@@ -82,7 +96,9 @@ class MapaViewModel(app: Application) : AndroidViewModel(app) {
             velocidadeKmh = prefs.velocidadeKmh,
             tempoParadaMin = prefs.tempoParadaMin,
             raioClusterKm = prefs.raioClusterKm,
-            tamanhoLote = prefs.tamanhoLote
+            // 0 = todas as paradas do print. O pedido e a sequencia inteira,
+            // nao um lote de dez.
+            tamanhoLote = 0
         )
         _estado.value = e.copy(
             resultado = r,

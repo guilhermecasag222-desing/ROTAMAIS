@@ -86,26 +86,65 @@ fun TelaMapa(vmPrincipal: MainViewModel) {
 
         val bmp = e.bitmap
         if (bmp != null) {
+            // A sequencia vem antes da imagem: e a resposta que o entregador
+            // precisa ler de relance, com o carro parado.
+            e.resultado?.let { r ->
+                Painel("Faca nesta ordem") {
+                    Text(
+                        r.paradas.joinToString("  →  ") { "${it.marcador.numero}" },
+                        style = MaterialTheme.typography.displaySmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    r.paradas.firstOrNull()?.let { p ->
+                        BotaoGrande("ENTREGUEI A ${p.marcador.numero} - PROXIMA",
+                            cor = Color(0xFF22D07A)) { vm.concluirPrimeira() }
+                    }
+                }
+            }
+
             MapaInterativo(e, vm, bmp.width, bmp.height)
 
             Text(
                 "Toque num numero para tirar essa parada da conta. " +
-                        "Toque em qualquer outro ponto para mudar de onde voce esta." +
-                        if (e.descartados > 0)
-                            " (${e.descartados} numero(s) do mapa foram ignorados por nao " +
-                                    "parecerem parada)" else "",
+                        "Toque em qualquer outro ponto para mudar de onde voce esta.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
+            Painel("Leitura") {
+                Linha("Paradas usadas", "${e.marcadores.count { it.ativo }}", destaque = true)
+                Linha("Numeros lidos na imagem", "${e.diagnostico.lidos}")
+                if (e.diagnostico.descartados > 0) {
+                    Linha("Descartados", "${e.diagnostico.descartados}")
+                    Text(
+                        "por area ${e.diagnostico.foraDaArea} - " +
+                                "tamanho ${e.diagnostico.tamanhoErrado} - " +
+                                "cor ${e.diagnostico.semCor} - " +
+                                "repetidos ${e.diagnostico.repetidos}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                if (!e.semFiltros) {
+                    Text(
+                        "Faltou parada? Leia sem nenhum filtro e desligue na mao o que " +
+                                "nao for entrega.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    BotaoGrande("LER TUDO, SEM FILTRO", cor = Color(0xFF4FA8FF)) {
+                        vm.relerSemFiltros()
+                    }
+                } else {
+                    Text("Lendo sem filtro: todo numero da imagem virou parada.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.secondary)
+                }
+            }
+
             val r = e.resultado
             if (r != null) {
-                Painel("Ordem sugerida") {
-                    Text(
-                        r.paradas.joinToString("  →  ") { "${it.marcador.numero}" },
-                        style = MaterialTheme.typography.titleLarge,
-                        color = MaterialTheme.colorScheme.primary
-                    )
+                Painel("Estimativas") {
                     Linha("Paradas", "${r.paradas.size}")
                     Linha("Distancia estimada", km(r.kmTotal))
                     Linha("Tempo estimado", duracao(r.minutosTotal), destaque = true)
@@ -130,10 +169,6 @@ fun TelaMapa(vmPrincipal: MainViewModel) {
                     )
                 }
 
-                r.paradas.firstOrNull()?.let { p ->
-                    BotaoGrande("ENTREGUEI A ${p.marcador.numero} - PROXIMA",
-                        cor = Color(0xFF22D07A)) { vm.concluirPrimeira() }
-                }
             }
 
             Painel("Escala do mapa") {
