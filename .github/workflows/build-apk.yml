@@ -37,7 +37,7 @@ jobs:
               -keystore chave-rotamais.jks \
               -storepass rotamais -keypass rotamais \
               -alias rotamais -keyalg RSA -keysize 2048 -validity 10000 \
-              -dname "CN=ROTA+, OU=Pessoal, O=ROTA+, L=Sombrio, ST=SC, C=BR"
+              -dname "CN=ROTA MAIS, OU=Pessoal, O=ROTA MAIS, L=Sombrio, ST=SC, C=BR"
           else
             echo "chave ja versionada no repositorio"
           fi
