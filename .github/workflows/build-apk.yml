@@ -26,13 +26,36 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Compilar APK de debug
-        run: gradle assembleDebug --no-daemon --stacktrace
+      # Sem chave fixa, cada runner gera uma chave de debug diferente e o Android
+      # recusa instalar por cima da versao anterior. A primeira execucao cria o
+      # arquivo e o publica como artifact para ser versionado no repositorio.
+      - name: Garantir chave de assinatura
+        run: |
+          if [ ! -f chave-rotamais.jks ]; then
+            echo "CHAVE_NOVA=1" >> $GITHUB_ENV
+            keytool -genkeypair -v \
+              -keystore chave-rotamais.jks \
+              -storepass rotamais -keypass rotamais \
+              -alias rotamais -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=ROTA+, OU=Pessoal, O=ROTA+, L=Sombrio, ST=SC, C=BR"
+          else
+            echo "chave ja versionada no repositorio"
+          fi
+
+      - name: Publicar chave gerada (versionar no repositorio)
+        if: env.CHAVE_NOVA == '1'
+        uses: actions/upload-artifact@v4
+        with:
+          name: chave-rotamais
+          path: chave-rotamais.jks
+
+      - name: Compilar APK
+        run: gradle assembleRelease --no-daemon --stacktrace
 
       - name: Relatorio do APK (permissoes, sdk, assinatura)
         run: |
           set -x
-          APK=$(find app/build/outputs/apk/debug -name '*.apk' | head -1)
+          APK=$(find app/build/outputs/apk/release -name '*.apk' | head -1)
           BT=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)
           {
             echo "=== ARQUIVO ==="
@@ -54,8 +77,8 @@ jobs:
       - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: rotamais-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
+          name: rotamais-apk
+          path: app/build/outputs/apk/release/*.apk
           if-no-files-found: error
 
       - name: Publicar relatorio
