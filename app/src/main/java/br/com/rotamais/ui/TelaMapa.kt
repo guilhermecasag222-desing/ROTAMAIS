@@ -16,12 +16,18 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -111,6 +117,8 @@ fun TelaMapa(vmPrincipal: MainViewModel) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
+            Conferencia(e, vm)
+
             Painel("Leitura") {
                 Linha("Paradas usadas", "${e.marcadores.count { it.ativo }}", destaque = true)
                 Linha("Numeros lidos na imagem", "${e.diagnostico.lidos}")
@@ -195,6 +203,87 @@ fun TelaMapa(vmPrincipal: MainViewModel) {
                     PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                 )
             }
+        }
+    }
+}
+
+/**
+ * Confere a leitura contra o que a tela do app de entregas informa.
+ * O numero de pacotes nao sai do mapa -- uma parada pode receber varios --
+ * entao vem daqui, e e o que da sentido a custo por pacote.
+ */
+@Composable
+private fun Conferencia(e: MapaState, vm: MapaViewModel) {
+
+    var paradas by remember { mutableStateOf(e.paradasReais?.toString() ?: "") }
+    var pacotes by remember { mutableStateOf(e.pacotes?.toString() ?: "") }
+
+    Painel("Conferencia") {
+        Text(
+            "O app de entregas mostra quantas paradas pendentes voce tem. " +
+                    "Digite aqui para saber se a leitura pegou todas.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            OutlinedTextField(
+                value = paradas,
+                onValueChange = {
+                    paradas = it.filter { c -> c.isDigit() }.take(3)
+                    vm.definirParadasReais(paradas.toIntOrNull())
+                },
+                label = { Text("Paradas") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.weight(1f)
+            )
+            OutlinedTextField(
+                value = pacotes,
+                onValueChange = {
+                    pacotes = it.filter { c -> c.isDigit() }.take(4)
+                    vm.definirPacotes(pacotes.toIntOrNull())
+                },
+                label = { Text("Pacotes") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.weight(1f)
+            )
+        }
+
+        val faltam = e.faltando
+        if (faltam != null) {
+            when {
+                faltam > 0 -> Text(
+                    "Faltam $faltam parada(s). Use LER TUDO SEM FILTRO, ou mande um " +
+                            "segundo print com zoom na regiao dos baloes amontoados.",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.error
+                )
+                faltam < 0 -> Text(
+                    "Peguei ${-faltam} a mais que o esperado. Toque nos numeros que nao " +
+                            "sao entrega para desligar.",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = Color(0xFFE0B341)
+                )
+                else -> Text(
+                    "Leitura completa: todas as paradas foram encontradas.",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+        }
+
+        val r = e.resultado
+        val qtdPacotes = e.pacotes
+        if (r != null && qtdPacotes != null && qtdPacotes > 0) {
+            val litros = if (vm.prefs.consumoKmL > 0) r.kmTotal / vm.prefs.consumoKmL else 0.0
+            val custo = litros * vm.prefs.precoLitro
+            Linha("Custo por pacote", reais(custo / qtdPacotes))
+            Linha("Pacotes por parada",
+                "%.1f".format(qtdPacotes.toDouble() / r.paradas.size.coerceAtLeast(1))
+                    .replace('.', ','))
+            Linha("Minutos por pacote",
+                "%.1f".format(r.minutosTotal.toDouble() / qtdPacotes).replace('.', ','))
         }
     }
 }

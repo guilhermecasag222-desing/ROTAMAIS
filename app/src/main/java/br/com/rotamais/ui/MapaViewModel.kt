@@ -25,8 +25,16 @@ data class MapaState(
     val origemX: Float? = null,
     val origemY: Float? = null,
     val resultado: ResultadoSequencia? = null,
+    /** Quantas paradas a tela do app de entregas diz que existem. */
+    val paradasReais: Int? = null,
+    /** Quantos pacotes estao no carro (uma parada pode ter varios). */
+    val pacotes: Int? = null,
     val mensagem: String? = null
-)
+) {
+    /** Quantas paradas o OCR deixou passar, se o total real foi informado. */
+    val faltando: Int?
+        get() = paradasReais?.let { it - marcadores.count { m -> m.ativo } }
+}
 
 class MapaViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -119,6 +127,10 @@ class MapaViewModel(app: Application) : AndroidViewModel(app) {
         )
         calcular()
     }
+
+    fun definirParadasReais(n: Int?) { _estado.value = _estado.value.copy(paradasReais = n) }
+
+    fun definirPacotes(n: Int?) { _estado.value = _estado.value.copy(pacotes = n) }
 
     fun limpar() { _estado.value = MapaState() }
 

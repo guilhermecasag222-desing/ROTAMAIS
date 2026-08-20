@@ -13,8 +13,10 @@ android {
         applicationId = "br.com.rotamais"
         minSdk = 24
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        // O CI injeta o numero da execucao, e publica a Release com a tag "v<codigo>".
+        // E assim que o app sabe que existe versao mais nova que a instalada.
+        versionCode = (System.getenv("VERSION_CODE") ?: "1").toInt()
+        versionName = System.getenv("VERSION_NAME") ?: "dev"
     }
 
     /**

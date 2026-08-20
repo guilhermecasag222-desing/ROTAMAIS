@@ -12,6 +12,11 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      VERSION_CODE: ${{ github.run_number }}
+      VERSION_NAME: "0.6.${{ github.run_number }}"
     steps:
       - uses: actions/checkout@v4
 
@@ -88,3 +93,17 @@ jobs:
           name: apk-report
           path: apk-report.txt
           if-no-files-found: warn
+
+      # Release publica: e daqui que o proprio app descobre que saiu versao nova.
+      # Artifact nao serve, porque exige autenticacao para baixar.
+      - name: Publicar release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          APK=$(find app/build/outputs/apk/release -name '*.apk' | head -1)
+          NOME="rotamais-v${VERSION_CODE}.apk"
+          cp "$APK" "$NOME"
+          gh release create "v${VERSION_CODE}" "$NOME" \
+            --title "ROTA+ v${VERSION_NAME}" \
+            --notes "Build automatica a partir do commit ${GITHUB_SHA:0:7}." \
+            || gh release upload "v${VERSION_CODE}" "$NOME" --clobber
