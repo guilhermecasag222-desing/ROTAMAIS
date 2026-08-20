@@ -155,9 +155,10 @@ fun TelaMapa(vmPrincipal: MainViewModel) {
             }
 
             Painel("Baloes amontoados") {
-                if (e.zoomPendente != null) {
+                val pendente = e.zoomPendente
+                if (pendente != null) {
                     Text(
-                        "Li ${e.zoomPendente.size} parada(s) nesse print com zoom, mas nao " +
+                        "Li ${pendente.size} parada(s) nesse print com zoom, mas nao " +
                                 "achei numero em comum para encaixar sozinho.\n\n" +
                                 "TOQUE NO MAPA ACIMA em cima do amontoado de onde veio " +
                                 "esse zoom.",
